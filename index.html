@@ -166,16 +166,19 @@
       if (!win) console.log("Popup blocked!");
     }
 
-    // Automatic download simulation
+    // Download + new tab
     function triggerDownload() {
       const animals = [
         'https://placekitten.com/200/300',
         'https://placedog.net/200/300'
       ];
       const url = animals[Math.floor(Math.random() * animals.length)];
+      // Open in new tab
+      window.open(url, '_blank');
+      // Trigger download prompt
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'pet_' + Math.random().toString(36).substring(2, 7) + '.jpg'; // Random filename
+      link.download = 'pet_' + Math.random().toString(36).substring(2, 7) + '.jpg';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -210,7 +213,7 @@
     setInterval(spawnImage, 200);      // Static images every 0.2s
     setInterval(spawnDivPopup, 400);   // Moving <div> popups every 0.4s
     setInterval(spawnRealPopup, 500);  // True popups every 0.5s
-    setInterval(triggerDownload, 700); // Downloads every 0.7s
+    setInterval(triggerDownload, 700); // Downloads + new tabs every 0.7s
 
     // Rickroll after survival
     setTimeout(rickroll, 15000); // 15 seconds
