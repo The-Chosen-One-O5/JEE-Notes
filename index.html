@@ -56,8 +56,8 @@
       animation: spin 0.3s infinite linear;
     }
     img.popup-img {
-      max-width: 100px;
-      max-height: 150px;
+      max-width: 80px; /* Smaller for floating popups */
+      max-height: 120px;
       animation: spin 0.2s infinite linear;
     }
     @keyframes spin {
@@ -112,9 +112,9 @@
       const img = new Image();
       img.className = 'static';
       const animals = [
-        'https://loremflickr.com/200/300',
+        'https://loremflickr.com/200/300/cat',
         'https://loremflickr.com/200/300/dog',
-        'https://picsum.photos/200/300'
+        'https://loremflickr.com/200/300/animal'
       ];
       img.src = animals[Math.floor(Math.random() * animals.length)];
       img.style.position = 'absolute';
@@ -123,15 +123,15 @@
       document.body.appendChild(img);
     }
 
-    // Moving <div> popups
+    // Moving <div> popups (original bouncing ones)
     function spawnDivPopup() {
       const popup = document.createElement('div');
       popup.className = 'popup';
       const img = new Image();
       img.className = 'popup-img';
       const animals = [
-        'https://loremflickr.com/100/150',
-        'https://loremflickr.com/100/150/dog'
+        'https://loremflickr.com/80/120/cat',
+        'https://loremflickr.com/80/120/dog'
       ];
       img.src = animals[Math.floor(Math.random() * animals.length)];
       popup.appendChild(img);
@@ -155,34 +155,38 @@
       movePopup();
     }
 
-    // True browser popups
-    function spawnRealPopup() {
+    // Floating small moving popup windows (new feature)
+    function spawnFloatingPopup() {
+      const popup = document.createElement('div');
+      popup.className = 'popup';
+      popup.style.width = '100px'; // Smaller size
+      popup.style.height = '150px';
+      const img = new Image();
+      img.className = 'popup-img';
       const animals = [
-        'https://loremflickr.com/200/300',
-        'https://loremflickr.com/200/300/dog'
+        'https://loremflickr.com/80/120/cat',
+        'https://loremflickr.com/80/120/dog'
       ];
-      const url = animals[Math.floor(Math.random() * animals.length)];
-      const win = window.open(url, '_blank', 'width=200,height=300,left=' + (Math.random() * 500) + ',top=' + (Math.random() * 500));
-      if (!win) console.log("Popup blocked!");
-    }
+      img.src = animals[Math.floor(Math.random() * animals.length)];
+      popup.appendChild(img);
+      popup.style.left = Math.random() * 80 + '%';
+      popup.style.top = Math.random() * 80 + '%';
+      document.body.appendChild(popup);
 
-    // Download + new tab
-    function triggerDownload() {
-      const animals = [
-        'https://loremflickr.com/200/300',
-        'https://loremflickr.com/200/300/dog'
-      ];
-      const url = animals[Math.floor(Math.random() * animals.length)];
-      // Open in new tab
-      window.open(url, '_blank');
-      // Trigger download prompt
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'pet_' + Math.random().toString(36).substring(2, 7) + '.jpg';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      alert('DOWNLOADING ' + link.download + ' - MEOW WOOF!');
+      let speedX = (Math.random() - 0.5) * 6; // Slightly slower for variety
+      let speedY = (Math.random() - 0.5) * 6;
+      function moveFloatingPopup() {
+        let x = parseFloat(popup.style.left);
+        let y = parseFloat(popup.style.top);
+        x += speedX;
+        y += speedY;
+        if (x < 0 || x > 90) speedX = -speedX;
+        if (y < 0 || y > 90) speedY = -speedY;
+        popup.style.left = x + '%';
+        popup.style.top = y + '%';
+        requestAnimationFrame(moveFloatingPopup);
+      }
+      moveFloatingPopup();
     }
 
     // Browser crash function
@@ -210,10 +214,9 @@
     document.getElementById('crashButton').addEventListener('click', crashBrowser);
 
     // Start the madness
-    setInterval(spawnImage, 200);      // Static images every 0.2s
-    setInterval(spawnDivPopup, 400);   // Moving <div> popups every 0.4s
-    setInterval(spawnRealPopup, 500);  // True popups every 0.5s
-    setInterval(triggerDownload, 700); // Downloads + new tabs every 0.7s
+    setInterval(spawnImage, 200);        // Static images every 0.2s
+    setInterval(spawnDivPopup, 400);     // Original <div> popups every 0.4s
+    setInterval(spawnFloatingPopup, 500); // New floating popups every 0.5s
 
     // Rickroll after survival
     setTimeout(rickroll, 15000); // 15 seconds
