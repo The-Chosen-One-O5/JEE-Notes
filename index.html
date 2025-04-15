@@ -135,7 +135,7 @@
     }
     </script>
 
-    <script type="module">
+        <script type="module">
         import * as THREE from 'three';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -157,9 +157,9 @@
         const playerSpeed = 12.0;
         const jumpVelocity = 9.0;
         const gravity = 28.0;
-        const blockSize = 1;
+        // const blockSize = 1; // Not directly used?
         const renderDistanceBlocks = 75;
-        const renderDistanceUnits = renderDistanceBlocks * blockSize;
+        const renderDistanceUnits = renderDistanceBlocks; // Simplified if blockSize is 1
         const worldSize = 600;
         const skyColor = 0x87CEEB;
         const fogNear = renderDistanceUnits * 0.3;
@@ -178,6 +178,7 @@
         let filmPass;
         let gameStarted = false;
         let musicStarted = false; // Flag for music
+        let animationFrameId = null; // To potentially stop the animation loop
 
         // --- DOM Elements ---
         const introVideo = document.getElementById('introVideo');
@@ -189,123 +190,166 @@
 
         // --- Pointer Lock Request Function ---
         function requestPointerLock() {
-            console.log("Requesting Pointer Lock...");
+            console.log("Attempting to request Pointer Lock...");
+            // Check if already locked
+            if (document.pointerLockElement === document.body ||
+                document.mozPointerLockElement === document.body ||
+                document.webkitPointerLockElement === document.body) {
+                console.log("Pointer Lock already active.");
+                return;
+            }
             document.body.requestPointerLock = document.body.requestPointerLock || document.body.mozRequestPointerLock || document.body.webkitRequestPointerLock;
             if (document.body.requestPointerLock) {
                 document.body.requestPointerLock();
             } else {
-                console.warn("Pointer Lock API not available");
-                instructions.innerHTML = "Your browser doesn't support Pointer Lock API. Controls might not work correctly.";
-                blocker.style.display = 'flex';
+                console.warn("Pointer Lock API not available or not supported in this context.");
+                instructions.innerHTML = "Your browser doesn't support Pointer Lock API. Controls may not work.";
+                blocker.style.display = 'flex'; // Show blocker as feedback
             }
         }
 
         // --- Glitch Effect Function ---
         function applyGlitch() {
-            console.log("Applying glitch effect...");
+            // console.log("Applying glitch effect..."); // Less noisy log
             document.body.classList.add('glitch');
             setTimeout(() => {
                 document.body.classList.remove('glitch');
-                console.log("Glitch effect removed.");
+                // console.log("Glitch effect removed."); // Less noisy log
             }, 350);
         }
 
         // --- Start Game Function ---
         function startGame() {
-            if (gameStarted) return;
+            if (gameStarted) {
+                console.log("startGame called but game already started.");
+                return;
+            }
             gameStarted = true;
-            console.log("Video interaction occurred. Starting game sequence...");
+            console.log(">>> Starting Game Sequence <<<");
 
+            // Hide video elements immediately
             introVideo.style.display = 'none';
             videoOverlay.classList.add('hidden');
 
-            applyGlitch();
+            applyGlitch(); // Apply visual effect
 
+            // Short delay allows glitch to be visible before potentially heavy init
             setTimeout(() => {
-                console.log("Initializing game...");
-                init();
-                if (renderer && renderer.domElement) {
-                    renderer.domElement.style.display = 'block';
-                    console.log("Game canvas displayed.");
-                } else {
-                     console.error("Renderer or canvas not ready after init!");
-                     blocker.style.display = 'flex';
-                     instructions.innerHTML = 'Error initializing game graphics. Please refresh.';
-                     return;
-                }
-                animate();
-                requestPointerLock(); // Request lock AFTER init and animate start
-                console.log("Game started and Pointer Lock requested.");
+                console.log("Initializing Three.js scene and assets...");
+                try {
+                    init(); // Setup Three.js scene, renderer, objects, controls, composer
+                    if (renderer && renderer.domElement) {
+                        renderer.domElement.style.display = 'block'; // Make canvas visible
+                        console.log("Game canvas should now be visible.");
+                    } else {
+                         console.error("CRITICAL: Renderer or canvas not ready after init!");
+                         alert("Error initializing game graphics. Please refresh."); // User feedback
+                         blocker.style.display = 'flex';
+                         instructions.innerHTML = 'Error initializing game graphics. Please refresh.';
+                         return; // Stop if renderer failed
+                    }
 
-            }, 150);
+                    // Reset time for animation loop delta
+                    prevTime = performance.now();
+                    // Start the animation loop
+                    animate();
+                    console.log("Animation loop started.");
+
+                    // Request pointer lock AFTER everything is set up and visible
+                    requestPointerLock();
+
+                    console.log(">>> Game Should Be Running <<<");
+
+                } catch (error) {
+                     console.error("CRITICAL ERROR during game initialization or startup:", error);
+                     alert("A critical error occurred during game startup. Please check the console (F12) and refresh.");
+                     blocker.style.display = 'flex';
+                     instructions.innerHTML = `Error during startup: ${error.message}.<br>Please refresh.`;
+                }
+
+            }, 150); // Delay in milliseconds
         }
 
         // --- Video Event Listeners ---
         introVideo.addEventListener('click', () => {
-            // --- Start Music on First Click ---
+            console.log("Intro Video Clicked.");
+
+            // 1. Try to play video immediately
+            if (!gameStarted && introVideo.paused) { // Only if game not started and video is paused
+                console.log("Attempting to play video...");
+                videoOverlay.classList.add('hidden'); // Hide overlay
+                const playPromise = introVideo.play();
+
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log("Video playback initiated by click.");
+                    }).catch(error => {
+                        console.error("Video playback failed on click:", error);
+                        // If video fails, start game immediately as fallback
+                        console.warn("Video play failed, starting game directly...");
+                        startGame();
+                    });
+                } else {
+                     // Fallback for browsers that don't return a promise (older?)
+                     console.warn("introVideo.play() did not return a promise. Assuming playback started or failed silently.");
+                     // We might still want to start the game if it fails silently
+                     // The 'ended' event should still trigger startGame if it does play.
+                }
+            } else if (gameStarted) {
+                console.log("Video clicked, but game already started. Requesting pointer lock if needed.");
+                // If game is running but lock is lost, clicking video area re-requests lock
+                if (document.pointerLockElement !== document.body) {
+                    requestPointerLock();
+                }
+            } else {
+                 console.log("Video clicked, but it wasn't paused or game already started.");
+            }
+
+            // 2. Try to play music (only once)
             if (!musicStarted && bgMusicElement) {
-                console.log("Attempting to play background music...");
+                console.log("Attempting to play background music (once)...");
                 musicStarted = true; // Set flag immediately
-                bgMusicElement.muted = false; // Unmute before playing
-                bgMusicElement.volume = 0.4; // Set desired volume (0.0 to 1.0)
+                bgMusicElement.muted = false; // Unmute
+                bgMusicElement.volume = 0.4; // Set volume
                 bgMusicElement.play().then(() => {
                     console.log("Background music playing.");
                 }).catch(error => {
                     console.error("Background music playback failed:", error);
-                    // musicStarted = false; // Optional: reset if failed
+                    // Don't reset musicStarted flag, just log it didn't work
                 });
-            }
-            // --- End Music Start ---
-
-            if (!gameStarted) { // Only play video if game hasn't started
-                console.log("Video clicked, attempting to play video...");
-                videoOverlay.classList.add('hidden'); // Hide overlay on click
-                introVideo.play().catch(error => {
-                    console.error("Video playback failed:", error);
-                    if (!gameStarted) {
-                        console.log("Video play failed, attempting to start game anyway...");
-                        startGame();
-                    }
-                });
-            } else {
-                 if (document.pointerLockElement !== document.body) {
-                    console.log("Video clicked while game running but pointer lock lost - requesting lock again.");
-                    requestPointerLock();
-                 }
             }
         });
 
-        introVideo.addEventListener('play', () => {
-             console.log("Video playback started.");
-             videoOverlay.classList.add('hidden'); // Ensure overlay is hidden
-        });
-
+        // This listener is crucial - starts game when video finishes naturally
         introVideo.addEventListener('ended', () => {
             console.log("Video naturally ended.");
-            if (!gameStarted) {
+            if (!gameStarted) { // Only start if not already started by click/fail
                 startGame();
+            } else {
+                 console.log("Video ended, but game was already started.");
             }
         });
 
 
         // --- Initialization (Includes Post-Processing Setup) ---
         function init() {
-            console.log("Running init()...");
+            // console.log("Running init()..."); // Already logged in startGame
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000000); // Start black
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, renderDistanceUnits);
-            camera.position.y = getTerrainHeight(0, 0) + playerHeight + 5;
-            camera.position.z = 5;
+            camera.position.y = getTerrainHeight(0, 0) + playerHeight + 5; // Initial Y pos
+            camera.position.z = 5; // Start back a bit
+            camera.lookAt(0, camera.position.y - 1, 0); // Look slightly down initially
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.domElement.style.display = 'none';
+            renderer.domElement.style.display = 'none'; // Keep hidden until ready
             document.body.appendChild(renderer.domElement);
-            console.log("Renderer created.");
+            // console.log("Renderer created."); // Less noisy log
 
             // Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -313,28 +357,26 @@
             const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
             directionalLight.position.set(worldSize * 0.3, 250, worldSize * 0.2);
             directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.width = 1024; // Lower res for performance/look
             directionalLight.shadow.mapSize.height = 1024;
-            directionalLight.shadow.camera.near = 10; directionalLight.shadow.camera.far = worldSize * 0.8;
+            directionalLight.shadow.camera.near = 10;
+            directionalLight.shadow.camera.far = worldSize * 0.8;
             directionalLight.shadow.camera.left = -worldSize * 0.4; directionalLight.shadow.camera.right = worldSize * 0.4;
             directionalLight.shadow.camera.top = worldSize * 0.4; directionalLight.shadow.camera.bottom = -worldSize * 0.4;
-            directionalLight.shadow.bias = -0.001;
+            directionalLight.shadow.bias = -0.001; // Adjust if shadow acne
             scene.add(directionalLight);
-            console.log("Lighting added.");
+            // console.log("Lighting added."); // Less noisy log
 
-            // Terrain
+            // Terrain (Must succeed)
             createTerrain();
+            if (!groundMesh) throw new Error("Terrain creation failed."); // Critical step
 
-            // Houses & Fences
-            if (groundMesh) {
-                 createHousesAndFences();
-                 console.log("Houses and fences created.");
-            } else {
-                console.error("Ground mesh not available, skipping houses/fences.");
-            }
+            // Houses & Fences (Can proceed without if needed, but log)
+            createHousesAndFences();
+            // console.log("Houses and fences created."); // Less noisy log
 
             // --- Post Processing Setup ---
-            console.log("Setting up Effect Composer...");
+            // console.log("Setting up Effect Composer..."); // Less noisy log
             composer = new EffectComposer(renderer);
             const renderPass = new RenderPass(scene, camera);
             composer.addPass(renderPass);
@@ -350,134 +392,277 @@
             vignettePass.uniforms['offset'].value = 0.95;
             vignettePass.uniforms['darkness'].value = 1.5;
             composer.addPass(vignettePass);
-            console.log("Effect Composer passes added.");
+            // console.log("Effect Composer passes added."); // Less noisy log
 
             // Set final background and fog
             scene.background.set(skyColor);
             scene.fog = new THREE.Fog(skyColor, fogNear, fogFar);
-            console.log("Scene background and fog set.");
+            // console.log("Scene background and fog set."); // Less noisy log
 
-            // Controls
-            setupControls(); // Setup listeners
-            console.log("Control event listeners registered.");
+            // Controls Setup (register listeners)
+            setupControls();
+            // console.log("Control event listeners registered."); // Logged in setupControls
 
-            // Event Listeners
+            // Window Resize Listener
             window.addEventListener('resize', onWindowResize, false);
-            console.log("Init complete.");
+            console.log("Initialization sequence complete.");
         }
 
         // --- Terrain Height Calculation ---
-        function getTerrainHeight(worldX, worldZ) { return Math.sin(worldX * terrainFrequency) * Math.cos(worldZ * terrainFrequency) * terrainAmplitude; }
+        function getTerrainHeight(worldX, worldZ) {
+            return Math.sin(worldX * terrainFrequency) * Math.cos(worldZ * terrainFrequency) * terrainAmplitude;
+        }
 
         // --- Terrain Creation (Using StandardMaterial and Normals) ---
-        function createTerrain() { console.log("Creating terrain (StandardMaterial)..."); try { const segments = 60; const groundGeometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments); const vertices = groundGeometry.attributes.position; for (let i = 0; i < vertices.count; i++) { const x = vertices.getX(i); const y = vertices.getY(i); const worldHeight = getTerrainHeight(x, y); vertices.setZ(i, worldHeight); } vertices.needsUpdate = true; groundGeometry.computeVertexNormals(); console.log("Vertex normals computed."); const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x559055, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide }); groundMesh = new THREE.Mesh(groundGeometry, groundMaterial); groundMesh.rotation.x = -Math.PI / 2; groundMesh.receiveShadow = true; scene.add(groundMesh); console.log("Terrain mesh (StandardMaterial) created and added."); } catch (error) { console.error("Error during terrain creation:", error); groundMesh = null; } }
+        function createTerrain() {
+             console.log("Creating terrain mesh...");
+             try {
+                const segments = 60; // More segments for smoother lighting
+                const groundGeometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
+                const vertices = groundGeometry.attributes.position;
+                for (let i = 0; i < vertices.count; i++) {
+                    const x = vertices.getX(i); const y = vertices.getY(i); // Original Plane X, Y
+                    const worldHeight = getTerrainHeight(x, y);
+                    vertices.setZ(i, worldHeight); // Set Z (becomes world Y after rotation)
+                }
+                vertices.needsUpdate = true;
+                groundGeometry.computeVertexNormals(); // Crucial for StandardMaterial
+                // console.log("Vertex normals computed."); // Less noisy log
+                const groundMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x559055, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide
+                });
+                groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+                groundMesh.rotation.x = -Math.PI / 2; // Rotate to XZ plane
+                groundMesh.receiveShadow = true;
+                scene.add(groundMesh);
+                console.log("Terrain mesh added to scene.");
+             } catch (error) {
+                console.error("Error during terrain creation:", error);
+                groundMesh = null; // Ensure it's null if failed
+             }
+        }
 
         // --- Fence Creation Helper (Using StandardMaterial) ---
-        function createFence(houseX, houseZ, houseWidth, houseDepth, terrainY) { const fenceGroup = new THREE.Group(); const postGeometry = new THREE.BoxGeometry(0.15, fenceHeight, 0.15); const fenceMaterial = new THREE.MeshStandardMaterial({ color: 0xE0E0E0, roughness: 0.8, metalness: 0.1 }); const fencePoints = [ { x: houseX - houseWidth / 2 - fenceOffset, z: houseZ - houseDepth / 2 - fenceOffset }, { x: houseX + houseWidth / 2 + fenceOffset, z: houseZ - houseDepth / 2 - fenceOffset }, { x: houseX + houseWidth / 2 + fenceOffset, z: houseZ + houseDepth / 2 + fenceOffset }, { x: houseX - houseWidth / 2 - fenceOffset, z: houseZ + houseDepth / 2 + fenceOffset } ]; const postSpacing = 1.5; for (let i = 0; i < fencePoints.length; i++) { const startPoint = fencePoints[i]; const endPoint = fencePoints[(i + 1) % fencePoints.length]; const dx = endPoint.x - startPoint.x; const dz = endPoint.z - startPoint.z; const length = Math.sqrt(dx * dx + dz * dz); const angle = Math.atan2(dz, dx); const numPosts = Math.ceil(length / postSpacing) + 1; for (let j = 0; j < numPosts; j++) { const ratio = j / (numPosts - 1); const postX = startPoint.x + dx * ratio; const postZ = startPoint.z + dz * ratio; const postY = getTerrainHeight(postX, postZ) + fenceHeight / 2; const post = new THREE.Mesh(postGeometry, fenceMaterial); post.position.set(postX, postY, postZ); post.castShadow = true; post.receiveShadow = true; fenceGroup.add(post); } const midX = startPoint.x + dx / 2; const midZ = startPoint.z + dz / 2; const midY = getTerrainHeight(midX, midZ); const railY1 = midY + fenceHeight * 0.3; const railY2 = midY + fenceHeight * 0.7; const railGeom = new THREE.BoxGeometry(length, 0.1, 0.1); const rail1 = new THREE.Mesh(railGeom, fenceMaterial); rail1.position.set(midX, railY1, midZ); rail1.rotation.y = angle; rail1.castShadow = true; rail1.receiveShadow = true; fenceGroup.add(rail1); const rail2 = new THREE.Mesh(railGeom, fenceMaterial); rail2.position.set(midX, railY2, midZ); rail2.rotation.y = angle; rail2.castShadow = true; rail2.receiveShadow = true; fenceGroup.add(rail2); } return fenceGroup; }
+        function createFence(houseX, houseZ, houseWidth, houseDepth, terrainY) {
+            const fenceGroup = new THREE.Group();
+            const postGeometry = new THREE.BoxGeometry(0.15, fenceHeight, 0.15);
+            const fenceMaterial = new THREE.MeshStandardMaterial({ color: 0xE0E0E0, roughness: 0.8, metalness: 0.1 });
+            const fencePoints = [
+                { x: houseX - houseWidth / 2 - fenceOffset, z: houseZ - houseDepth / 2 - fenceOffset }, { x: houseX + houseWidth / 2 + fenceOffset, z: houseZ - houseDepth / 2 - fenceOffset }, { x: houseX + houseWidth / 2 + fenceOffset, z: houseZ + houseDepth / 2 + fenceOffset }, { x: houseX - houseWidth / 2 - fenceOffset, z: houseZ + houseDepth / 2 + fenceOffset }
+            ];
+            const postSpacing = 1.5;
+            for (let i = 0; i < fencePoints.length; i++) {
+                const startPoint = fencePoints[i]; const endPoint = fencePoints[(i + 1) % fencePoints.length];
+                const dx = endPoint.x - startPoint.x; const dz = endPoint.z - startPoint.z;
+                const length = Math.sqrt(dx * dx + dz * dz); const angle = Math.atan2(dz, dx);
+                const numPosts = Math.ceil(length / postSpacing) + 1;
+                for (let j = 0; j < numPosts; j++) {
+                    const ratio = j / (numPosts - 1); const postX = startPoint.x + dx * ratio; const postZ = startPoint.z + dz * ratio;
+                    const postY = getTerrainHeight(postX, postZ) + fenceHeight / 2; // Place relative to terrain
+                    const post = new THREE.Mesh(postGeometry, fenceMaterial); post.position.set(postX, postY, postZ);
+                    post.castShadow = true; post.receiveShadow = true; fenceGroup.add(post);
+                }
+                const midX = startPoint.x + dx / 2; const midZ = startPoint.z + dz / 2;
+                const midY = getTerrainHeight(midX, midZ); const railY1 = midY + fenceHeight * 0.3; const railY2 = midY + fenceHeight * 0.7;
+                const railGeom = new THREE.BoxGeometry(length, 0.1, 0.1);
+                const rail1 = new THREE.Mesh(railGeom, fenceMaterial); rail1.position.set(midX, railY1, midZ); rail1.rotation.y = angle;
+                rail1.castShadow = true; rail1.receiveShadow = true; fenceGroup.add(rail1);
+                const rail2 = new THREE.Mesh(railGeom, fenceMaterial); rail2.position.set(midX, railY2, midZ); rail2.rotation.y = angle;
+                rail2.castShadow = true; rail2.receiveShadow = true; fenceGroup.add(rail2);
+            }
+            return fenceGroup;
+        }
 
         // --- House and Fence Placement (Using StandardMaterial) ---
-        function createHousesAndFences() { const houseGroupTemplate = new THREE.Group(); const houseBaseMaterial = new THREE.MeshStandardMaterial({ color: 0xD2B48C, roughness: 0.8, metalness: 0.1 }); const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(houseBaseWidth, houseBaseHeight, houseBaseDepth), houseBaseMaterial); houseGroupTemplate.add(baseMesh); const houseRoofMaterial = new THREE.MeshStandardMaterial({ color: 0x8B0000, roughness: 0.7, metalness: 0.2 }); const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(houseBaseWidth * 0.75, 2, 4), houseRoofMaterial); roofMesh.position.y = houseBaseHeight / 2 + 1; roofMesh.rotation.y = Math.PI / 4; houseGroupTemplate.add(roofMesh); const doorMaterial = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.85 }); const doorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), doorMaterial); doorMesh.position.set(0, 0, houseBaseDepth / 2 + 0.01); houseGroupTemplate.add(doorMesh); const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x87CEFA, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.8 }); const windowMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1), windowMaterial); windowMesh.position.set(-houseBaseWidth / 2 - 0.01, 0.5, 0); windowMesh.rotation.y = -Math.PI / 2; houseGroupTemplate.add(windowMesh); const windowMesh2 = windowMesh.clone(); windowMesh2.position.set(houseBaseWidth / 2 + 0.01, 0.5, 0); windowMesh2.rotation.y = Math.PI / 2; houseGroupTemplate.add(windowMesh2); const numberOfHouses = 120; const placementSize = worldSize * 0.85; collidableObjects.length = 0; for (let i = 0; i < numberOfHouses; i++) { const houseInstance = houseGroupTemplate.clone(true); let posX, posZ; const minDistance = 20; do { posX = (Math.random() - 0.5) * placementSize; posZ = (Math.random() - 0.5) * placementSize; } while (Math.sqrt(posX*posX + posZ*posZ) < minDistance); const terrainY = getTerrainHeight(posX, posZ); houseInstance.position.set(posX, terrainY + houseBaseHeight / 2, posZ); houseInstance.rotation.y = Math.random() * Math.PI * 2; scene.add(houseInstance); houseInstance.traverse(function (child) { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } }); const houseBox = new THREE.Box3(); let collisionWidth = houseBaseWidth; let collisionDepth = houseBaseDepth; let hasFence = false; if (Math.random() < 0.35) { hasFence = true; const fenceGroup = createFence(posX, posZ, houseBaseWidth, houseBaseDepth, terrainY); scene.add(fenceGroup); collisionWidth += 2 * fenceOffset; collisionDepth += 2 * fenceOffset; } const halfColWidth = collisionWidth / 2; const halfColDepth = collisionDepth / 2; const collisionHeight = hasFence ? Math.max(houseBaseHeight, fenceHeight) : houseBaseHeight; houseBox.min.set(posX - halfColWidth, terrainY, posZ - halfColDepth); houseBox.max.set(posX + halfColWidth, terrainY + collisionHeight, posZ + halfColDepth); collidableObjects.push(houseBox); } }
+        function createHousesAndFences() {
+            console.log("Creating houses and fences...");
+            const houseGroupTemplate = new THREE.Group(); // Create template once
+            // Define materials once
+            const houseBaseMaterial = new THREE.MeshStandardMaterial({ color: 0xD2B48C, roughness: 0.8, metalness: 0.1 });
+            const houseRoofMaterial = new THREE.MeshStandardMaterial({ color: 0x8B0000, roughness: 0.7, metalness: 0.2 });
+            const doorMaterial = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.85 });
+            const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x87CEFA, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.8 });
+            // Build template geometry
+            const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(houseBaseWidth, houseBaseHeight, houseBaseDepth), houseBaseMaterial);
+            houseGroupTemplate.add(baseMesh);
+            const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(houseBaseWidth * 0.75, 2, 4), houseRoofMaterial);
+            roofMesh.position.y = houseBaseHeight / 2 + 1; roofMesh.rotation.y = Math.PI / 4;
+            houseGroupTemplate.add(roofMesh);
+            const doorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), doorMaterial);
+            doorMesh.position.set(0, 0, houseBaseDepth / 2 + 0.01);
+            houseGroupTemplate.add(doorMesh);
+            const windowMesh1 = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1), windowMaterial);
+            windowMesh1.position.set(-houseBaseWidth / 2 - 0.01, 0.5, 0); windowMesh1.rotation.y = -Math.PI / 2;
+            houseGroupTemplate.add(windowMesh1);
+            const windowMesh2 = windowMesh1.clone(); // Clone geometry+material reference
+            windowMesh2.position.set(houseBaseWidth / 2 + 0.01, 0.5, 0); windowMesh2.rotation.y = Math.PI / 2;
+            houseGroupTemplate.add(windowMesh2);
 
-        // --- Control Setup (Pointer Lock) --- [ DEBUG LOGGING ADDED ] ---
+            const numberOfHouses = 120;
+            const placementSize = worldSize * 0.85;
+            collidableObjects.length = 0; // Clear previous colliders
+            let housesCreated = 0;
+
+            for (let i = 0; i < numberOfHouses; i++) {
+                const houseInstance = houseGroupTemplate.clone(true); // Deep clone template
+                let posX, posZ; const minDistance = 20; // Min distance from origin
+                do { // Find suitable position
+                    posX = (Math.random() - 0.5) * placementSize;
+                    posZ = (Math.random() - 0.5) * placementSize;
+                } while (Math.sqrt(posX*posX + posZ*posZ) < minDistance);
+
+                const terrainY = getTerrainHeight(posX, posZ);
+                houseInstance.position.set(posX, terrainY + houseBaseHeight / 2, posZ); // Place on terrain
+                houseInstance.rotation.y = Math.random() * Math.PI * 2; // Random rotation
+                scene.add(houseInstance);
+
+                // Enable shadows for all cloned parts
+                houseInstance.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+
+                // Collision Box & Optional Fence
+                const houseBox = new THREE.Box3(); let collisionWidth = houseBaseWidth; let collisionDepth = houseBaseDepth; let hasFence = false;
+                if (Math.random() < 0.35) { // ~35% chance of fence
+                    hasFence = true;
+                    const fenceGroup = createFence(posX, posZ, houseBaseWidth, houseBaseDepth, terrainY);
+                    scene.add(fenceGroup);
+                    collisionWidth += 2 * fenceOffset; collisionDepth += 2 * fenceOffset; // Expand collision box
+                }
+                const halfColWidth = collisionWidth / 2; const halfColDepth = collisionDepth / 2;
+                const collisionHeight = hasFence ? Math.max(houseBaseHeight, fenceHeight) : houseBaseHeight;
+                houseBox.min.set(posX - halfColWidth, terrainY, posZ - halfColDepth); // Base Y at terrain
+                houseBox.max.set(posX + halfColWidth, terrainY + collisionHeight, posZ + halfColDepth);
+                collidableObjects.push(houseBox);
+                housesCreated++;
+            }
+            console.log(`Created ${housesCreated} houses and ${collidableObjects.length} collision objects.`);
+        }
+
+        // --- Control Setup (Pointer Lock) --- [ DEBUG LOGGING, ERROR LISTENER ] ---
         function setupControls() {
-             console.log("Setting up control listeners..."); // Log setup start
+             console.log("Registering Pointer Lock change/error listeners...");
              document.addEventListener('pointerlockchange', lockChangeAlert, false);
              document.addEventListener('mozpointerlockchange', lockChangeAlert, false);
              document.addEventListener('webkitpointerlockchange', lockChangeAlert, false);
+             document.addEventListener('pointerlockerror', lockErrorAlert, false); // Catch lock errors
+             document.addEventListener('mozpointerlockerror', lockErrorAlert, false);
+             document.addEventListener('webkitpointerlockerror', lockErrorAlert, false);
 
              function lockChangeAlert() {
-                 if (document.pointerLockElement === document.body || document.mozPointerLockElement === document.body || document.webkitPointerLockElement === document.body) {
-                     console.log('Pointer Lock Acquired - Attaching Input Listeners.'); // Log lock success
-                     blocker.style.display = 'none'; // Hide instructions
+                 // Check which element has pointer lock
+                 const lockedElement = document.pointerLockElement || document.mozPointerLockElement || document.webkitPointerLockElement;
+
+                 if (lockedElement === document.body) {
+                     // --- POINTER LOCK ACQUIRED ---
+                     console.log('Pointer Lock ACQUIRED - Attaching Input Listeners.');
+                     blocker.style.display = 'none'; // Hide instructions overlay
                      document.addEventListener("mousemove", onMouseMove, false);
                      document.addEventListener('keydown', onKeyDown, false); // Add key listeners ONLY when locked
                      document.addEventListener('keyup', onKeyUp, false);
+                     // Optional: Give brief focus to body/canvas if needed? Usually automatic.
+                     // renderer.domElement.focus();
                  } else {
-                     console.log('Pointer Lock Lost - Removing Input Listeners.'); // Log lock loss
-                     blocker.style.display = 'flex'; // Show instructions
+                     // --- POINTER LOCK LOST or NOT ACQUIRED on document.body ---
+                     console.log('Pointer Lock LOST or not on body - Removing Input Listeners.');
+                     blocker.style.display = 'flex'; // Show instructions overlay
                      document.removeEventListener("mousemove", onMouseMove, false);
                      document.removeEventListener('keydown', onKeyDown, false); // Remove key listeners
                      document.removeEventListener('keyup', onKeyUp, false);
-                     // Reset movement keys state when focus is lost
+                     // Reset movement flags state when focus/lock is lost
                      moveForward = false; moveBackward = false; moveLeft = false; moveRight = false;
-                     console.log("Movement flags reset."); // Log flag reset
+                     console.log("Movement flags reset.");
                  }
              }
-            // Click blocker to re-acquire lock
+
+            function lockErrorAlert(event) {
+                 // --- POINTER LOCK ERROR ---
+                 console.error('Pointer Lock Error!', event);
+                 instructions.innerHTML = "Could not lock pointer. <br> Try clicking the screen again. <br> (Ensure browser window is focused)";
+                 blocker.style.display = 'flex'; // Show blocker with error hint
+                 // Force removal of listeners just in case lockChangeAlert didn't fire correctly
+                 document.removeEventListener("mousemove", onMouseMove, false);
+                 document.removeEventListener('keydown', onKeyDown, false);
+                 document.removeEventListener('keyup', onKeyUp, false);
+                 moveForward = false; moveBackward = false; moveLeft = false; moveRight = false;
+            }
+
+            // Click blocker overlay to attempt re-acquiring lock
             blocker.addEventListener('click', () => {
-                console.log("Blocker clicked, requesting pointer lock."); // Log blocker click
+                console.log("Blocker clicked, requesting pointer lock.");
+                // Don't hide blocker here, lockChangeAlert will hide it if successful
                 requestPointerLock();
             });
         }
 
         // --- Mouse Movement Handler ---
         function onMouseMove(event) {
-            // No lock check needed here, listener is only added when locked
+            // This listener should only be active when lock is acquired
             const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
             const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
-            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ'); // Order YXZ: Yaw, Pitch, Roll
             euler.setFromQuaternion(camera.quaternion);
-            euler.y -= movementX * 0.002;
-            euler.x -= movementY * 0.002;
+            euler.y -= movementX * 0.002; // Yaw (Left/Right)
+            euler.x -= movementY * 0.002; // Pitch (Up/Down)
+            // Clamp vertical look angle to prevent camera flipping
             euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
-            camera.quaternion.setFromEuler(euler);
+            camera.quaternion.setFromEuler(euler); // Apply rotation
         }
 
-        // --- Keyboard Handlers --- [ DEBUG LOGGING ADDED ] ---
+        // --- Keyboard Handlers --- [ DEBUG LOGGING ] ---
         function onKeyDown(event) {
-            console.log("Key Down:", event.code); // Log which key was pressed
-            // Check lock just in case, though listener should only be active when locked
-            if (document.pointerLockElement !== document.body) {
-                 console.warn("onKeyDown fired without pointer lock?");
-                 return;
-            }
-            let processed = false;
+            // This listener should only be active when lock is acquired
+            console.log("Key Down:", event.code, `(F:${moveForward}, B:${moveBackward}, L:${moveLeft}, R:${moveRight})`); // Log key and current state
+            let processed = false; // Flag to check if we handled the key
             switch (event.code) {
                 case 'ArrowUp': case 'KeyW': moveForward = true; processed = true; break;
                 case 'ArrowLeft': case 'KeyA': moveLeft = true; processed = true; break;
                 case 'ArrowDown': case 'KeyS': moveBackward = true; processed = true; break;
                 case 'ArrowRight': case 'KeyD': moveRight = true; processed = true; break;
                 case 'Space':
-                    if (canJump === true) {
-                        console.log("Jump initiated");
-                        velocity.y += jumpVelocity;
+                    if (canJump) { // Check if allowed to jump
+                        console.log("Jump initiated!");
+                        velocity.y += jumpVelocity; // Add upward velocity
+                        canJump = false; // Prevent double-jumping until grounded
+                    } else {
+                        console.log("Tried to jump, but not allowed (in air?).");
                     }
-                    canJump = false;
                     processed = true;
                     break;
             }
             if (processed) {
-                event.preventDefault(); // Prevent default action only for processed keys
+                event.preventDefault(); // Prevent browser scrolling/actions for game keys
+                 console.log(` -> New Flags: F=${moveForward}, B=${moveBackward}, L=${moveLeft}, R=${moveRight}`); // Log updated state
             }
-            console.log(`Move Flags: F=${moveForward}, B=${moveBackward}, L=${moveLeft}, R=${moveRight}`); // Log flags state
         }
 
         function onKeyUp(event) {
-            console.log("Key Up:", event.code); // Log key release
-            // No lock check needed here typically, we always want to register key up
+            // This listener should only be active when lock is acquired
+            console.log("Key Up:", event.code, `(F:${moveForward}, B:${moveBackward}, L:${moveLeft}, R=${moveRight})`); // Log key release and current state
             switch (event.code) {
                 case 'ArrowUp': case 'KeyW': moveForward = false; break;
                 case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
                 case 'ArrowDown': case 'KeyS': moveBackward = false; break;
                 case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                // No action needed for Space key up
             }
-             console.log(`Move Flags: F=${moveForward}, B=${moveBackward}, L=${moveLeft}, R=${moveRight}`); // Log flags state
+            console.log(` -> New Flags: F=${moveForward}, B=${moveBackward}, L=${moveLeft}, R=${moveRight}`); // Log updated state
         }
 
         // --- Window Resize (Handles Composer) ---
         function onWindowResize() {
-             if (!camera || !renderer || !composer) return;
+             if (!camera || !renderer || !composer) return; // Check if objects exist
+             console.log("Window resized.");
              camera.aspect = window.innerWidth / window.innerHeight;
              camera.updateProjectionMatrix();
              renderer.setSize(window.innerWidth, window.innerHeight);
-             composer.setSize(window.innerWidth, window.innerHeight);
-             console.log("Resized renderer and composer.");
+             composer.setSize(window.innerWidth, window.innerHeight); // Resize post-processing buffer
         }
 
         // --- Collision Check Function ---
-        function checkCollisions(playerNextPosBox) {
+        function checkCollisions(playerWorldBox) {
+            // Simple AABB intersection check
             for (const objectBox of collidableObjects) {
-                if (playerNextPosBox.intersectsBox(objectBox)) {
+                if (playerWorldBox.intersectsBox(objectBox)) {
+                    // console.log("Collision detected with object:", objectBox); // Can be spammy
                     return true; // Collision detected
                 }
             }
@@ -485,115 +670,111 @@
         }
 
 
-        // --- Animation Loop (Uses Composer, Updates Film Pass) --- [ DEBUG LOGGING ADDED ] ---
+        // --- Animation Loop (Uses Composer, Updates Film Pass) --- [ DEBUG LOGGING ] ---
         function animate() {
-            if (!renderer || !scene || !camera || !composer || !gameStarted) {
-                 // console.warn("animate() called before init() or after game stopped.");
-                 return; // Don't run if not initialized
-            }
+            // Re-register the next frame - crucial for the loop
+            animationFrameId = requestAnimationFrame(animate);
 
-            requestAnimationFrame(animate);
-            // console.log("Animating frame..."); // Optional: Very verbose log
+            // Safety check - stop loop if game isn't considered "started" anymore
+            if (!gameStarted || !renderer || !composer) {
+                 console.warn("animate() called but game not ready or stopped. Halting loop.");
+                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                 return;
+            }
 
             const time = performance.now();
-            const delta = Math.min(0.05, (time - prevTime) / 1000); // Cap delta time
+            // Calculate delta time, ensuring it's not too large (e.g., after tab switch)
+            const delta = Math.min(0.05, (time - prevTime) / 1000);
+            prevTime = time; // Store time for next frame calculation
 
-            // --- Physics Update ---
-            velocity.x -= velocity.x * 10.0 * delta;
-            velocity.z -= velocity.z * 10.0 * delta;
-            velocity.y -= gravity * delta;
+            // --- Player Input & Movement Direction ---
+            // Only process movement if pointer lock is active
+            if (document.pointerLockElement === document.body) {
+                // Apply friction/damping (exponential decay)
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
 
-            direction.z = Number(moveForward) - Number(moveBackward);
-            direction.x = Number(moveRight) - Number(moveLeft);
-            direction.normalize(); // Ensure consistent speed in diagonals
+                // Determine movement direction based on flags (normalized)
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize(); // Ensures consistent speed regardless of diagonal movement
 
-            const speedFactor = playerSpeed * delta;
-            let moveX = 0;
-            let moveZ = 0;
+                // Calculate velocity change based on direction and speed
+                if (moveForward || moveBackward) velocity.z -= direction.z * playerSpeed * delta * 10; // Use acceleration approach
+                if (moveLeft || moveRight) velocity.x += direction.x * playerSpeed * delta * 10; // Use acceleration approach
 
-            if (moveForward || moveBackward || moveLeft || moveRight) {
-                // Calculate movement based on camera direction (ignoring pitch)
-                const cameraDirection = new THREE.Vector3();
-                camera.getWorldDirection(cameraDirection);
-                cameraDirection.y = 0; // Project onto XZ plane
-                cameraDirection.normalize();
-
-                const forwardMove = cameraDirection.clone().multiplyScalar(direction.z * speedFactor);
-                const strafeMove = cameraDirection.clone().cross(camera.up).multiplyScalar(direction.x * speedFactor); // Use cross product for strafe vector
-
-                moveX = forwardMove.x + strafeMove.x;
-                moveZ = forwardMove.z + strafeMove.z;
-                // console.log(`Calculated moveX: ${moveX.toFixed(4)}, moveZ: ${moveZ.toFixed(4)} (Delta: ${delta.toFixed(4)})`); // Log movement calculation
-            } else {
-                // console.log("No movement keys pressed."); // Log when no movement input
-            }
+                // Transform velocity vector from local camera space to world space
+                const worldVelocity = new THREE.Vector3(velocity.x, 0, velocity.z);
+                worldVelocity.applyQuaternion(camera.quaternion); // Rotate velocity by camera orientation
+                // We only care about the XZ components for world movement after rotation
+                const moveX = worldVelocity.x * delta;
+                const moveZ = worldVelocity.z * delta;
 
 
-            // --- Collision Detection ---
-            const currentPos = camera.position.clone(); // Clone current position *before* potential changes
+                // --- Collision Detection (XZ Plane) ---
+                const currentPos = camera.position.clone(); // Current world position
+                const predictedPosXZ = currentPos.clone();
+                predictedPosXZ.x += moveX;
+                predictedPosXZ.z += moveZ;
+                const playerCenterY = currentPos.y - playerHeight / 2; // Center Y for collision box
 
-            // Predict next position based *only* on player input (moveX, moveZ)
-            const nextPlayerPosXZ = currentPos.clone();
-            nextPlayerPosXZ.x += moveX;
-            nextPlayerPosXZ.z += moveZ;
+                // Update player bounding box based on predicted XZ, current Y
+                playerBox.setFromCenterAndSize(
+                     new THREE.Vector3(predictedPosXZ.x, playerCenterY, predictedPosXZ.z),
+                     new THREE.Vector3(playerWidth, playerHeight, playerDepth)
+                );
 
-            // Update player bounding box based on predicted XZ position and current Y
-            const playerCenterY = currentPos.y - playerHeight / 2; // Center Y for bounding box
-            playerBox.setFromCenterAndSize(
-                 new THREE.Vector3(nextPlayerPosXZ.x, playerCenterY, nextPlayerPosXZ.z),
-                 new THREE.Vector3(playerWidth, playerHeight, playerDepth)
-            );
-
-            let collisionDetectedXZ = checkCollisions(playerBox);
-            // if (collisionDetectedXZ) console.log("Collision Detected (XZ)"); // Log XZ collision
-
-            // Apply XZ movement *only* if no collision in that plane
-            if (!collisionDetectedXZ) {
-                camera.position.x = nextPlayerPosXZ.x;
-                camera.position.z = nextPlayerPosXZ.z;
-                // console.log(`Applied XZ move: CamX=${camera.position.x.toFixed(2)}, CamZ=${camera.position.z.toFixed(2)}`); // Log applied move
-            } else {
-                // Stop horizontal velocity if collision (helps prevent sticking)
-                velocity.x = 0;
-                velocity.z = 0;
-                // console.log("Blocked XZ movement due to collision.");
-            }
-
-
-            // --- Vertical Movement and Ground Check ---
-            // Apply gravity/jump velocity AFTER horizontal movement/collision check
-            camera.position.y += velocity.y * delta;
-
-            const terrainY = getTerrainHeight(camera.position.x, camera.position.z); // Get terrain height at current XZ
-            const groundCheckPos = terrainY + playerHeight; // Where player feet should be
-
-            // Check if player is below or at ground level
-            if (camera.position.y <= groundCheckPos) {
-                // console.log(`Ground collision/snap: CamY=${camera.position.y.toFixed(2)}, GroundCheck=${groundCheckPos.toFixed(2)}`); // Log ground hit
-                velocity.y = 0; // Stop falling/rising velocity
-                camera.position.y = groundCheckPos; // Snap precisely to ground
-                if (!canJump) {
-                    // console.log("Landed, can jump again."); // Log landing
-                    canJump = true; // Allow jumping again ONLY after landing
+                // Check for horizontal collisions
+                if (!checkCollisions(playerBox)) {
+                    // No collision: Apply calculated XZ movement
+                    camera.position.x += moveX;
+                    camera.position.z += moveZ;
+                    // if (moveX !== 0 || moveZ !== 0) console.log(`Moved: dX=${moveX.toFixed(3)}, dZ=${moveZ.toFixed(3)}`); // Log movement
+                } else {
+                    // Collision: Stop horizontal movement component that caused collision (simple stop)
+                    velocity.x = 0;
+                    velocity.z = 0;
+                    // console.log("Blocked XZ movement due to collision."); // Log blocking
                 }
+
+            } else {
+                 // If pointer lock is lost, ensure velocity decays to zero
+                 velocity.x -= velocity.x * 10.0 * delta;
+                 velocity.z -= velocity.z * 10.0 * delta;
+                 // No new movement input processed
+            }
+
+
+            // --- Vertical Movement (Gravity, Jumping, Ground Check) ---
+            velocity.y -= gravity * delta; // Apply gravity constantly
+            camera.position.y += velocity.y * delta; // Apply vertical velocity
+
+            // Ground Check
+            const currentTerrainY = getTerrainHeight(camera.position.x, camera.position.z);
+            const groundLevelY = currentTerrainY + playerHeight; // Where player's feet should be
+
+            if (camera.position.y <= groundLevelY) {
+                // console.log(`Ground collision/snap: CamY=${camera.position.y.toFixed(2)}, GroundY=${groundLevelY.toFixed(2)}`); // Log ground interaction
+                velocity.y = 0; // Stop vertical velocity
+                camera.position.y = groundLevelY; // Snap player to ground
+                canJump = true; // Allow jumping again
             } else {
                 // Player is in the air
-                 canJump = false; // Cannot jump while in the air
+                canJump = false;
             }
 
-            // --- Update Film Pass Time ---
+            // --- Post Processing Update ---
             if(filmPass) {
                 filmPass.uniforms['time'].value += delta; // Animate film grain/scanlines
             }
 
-            // --- Rendering with Composer ---
-            composer.render(delta); // Use the composer
-
-            prevTime = time; // Update previous time for next frame delta calculation
+            // --- Rendering ---
+            composer.render(delta); // Render scene through EffectComposer
         }
 
         // --- Initial Setup ---
-        console.log("Page loaded. Waiting for video interaction.");
+        console.log("Page loaded. Script parsed. Waiting for video interaction to start game.");
+        // init() and animate() are called by startGame()
 
     </script>
 </body>
